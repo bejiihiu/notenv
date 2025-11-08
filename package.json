@@ -1,0 +1,14 @@
+{
+    "name": "notenv",
+    "module": "index.js",
+    "type": "module",
+    "scripts": {
+        "test": "bun ./test/index.js"
+    },
+    "devDependencies": {
+        "@types/bun": "latest"
+    },
+    "peerDependencies": {
+        "typescript": "^5"
+    }
+}
