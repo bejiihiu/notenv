@@ -1,19 +1,22 @@
-import { parseConfig } from "../src/parser/parser.js";
+import { parse, Builder, Types, debug } from "../index.js";
 
-const text = `
-# общие настройки приложения
-[general]
-APP_NAME = xs
-VERSION = 1.0.0
-DEBUG = true
-ALLOWED_HOSTS = localhost,example.com,test.com
+debug.setLevel("TRACE");
 
-# настройки базы данных
-[database]
-DB.HOST = 127.0.0.1
-DB.PORT = 5432
-DB.USER = root
-DB.PASSWORD = supersecret
-`;
+const env = new Builder(
+    parse("C:\\Users\\bejii\\OneDrive\\Desktop\\Новая папка\\test\\env.xs", {
+        // ключи вне секций ищутся по всем секциям
+        debug: Types.BOOLEAN,
+        hosts: Types.ARRAY,
 
-console.log(parseConfig(text));
+        // если ключ — объект — это имя секции
+        database: {
+            host: Types.STRING,
+            port: Types.INT,
+        },
+    })
+);
+
+console.log(env.get("database.host")); // → "127.0.0.1"
+console.log(env.get("database.port")); // → 5432
+console.log(env.get("hosts")); // → ["localhost", "example.com", "test.com"]
+console.log(env.get("debug")); // → true

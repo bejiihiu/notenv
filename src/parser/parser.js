@@ -1,55 +1,92 @@
-function parseValue(value) {
-    value = value.trim();
+import { parseConfig } from "./parserValues.js";
+import { findKeyInSections } from "../utils/findKeyInSections.js";
+import { debug } from "../utils/debug.js";
+import fs from "node:fs";
+import path from "node:path";
 
-    // boolean
-    if (value.toLowerCase() === "true") return true;
-    if (value.toLowerCase() === "false") return false;
+function parse(arg, schema = undefined) {
+    debug.trace("parse() called with:", arg);
 
-    // number (int or float)
-    if (!Number.isNaN(Number(value)) && value !== "") return Number(value);
+    let text = String(arg);
 
-    // array: a,b,c
-    if (value.includes(",")) {
-        return value.split(",").map((v) => v.trim());
-    }
+    try {
+        const maybePath = path.resolve(process.cwd(), arg);
+        debug.trace("Resolved path:", maybePath);
 
-    return value;
-}
-
-function setNested(obj, keys, value) {
-    let current = obj;
-    for (let i = 0; i < keys.length - 1; i++) {
-        if (!current[keys[i]]) current[keys[i]] = {};
-        current = current[keys[i]];
-    }
-    current[keys[keys.length - 1]] = value;
-}
-
-function parseConfig(text) {
-    const config = {};
-    let currentSection = null;
-
-    for (let line of text.split("\n").map((l) => l.trim())) {
-        // пропуск пустых и комментариев
-        if (!line || line.startsWith("#")) continue;
-
-        // секция
-        if (line.startsWith("[") && line.endsWith("]")) {
-            currentSection = line.slice(1, -1).trim();
-            config[currentSection] = {};
-            continue;
+        if (fs.existsSync(maybePath) && fs.statSync(maybePath).isFile()) {
+            debug.info("Loading config file:", maybePath);
+            text = fs.readFileSync(maybePath, "utf8");
+        } else {
+            debug.debug("Arg is NOT a file. Treating as text input.");
         }
+    } catch (e) {
+        debug.error("Error reading file:", e);
+    }
+    const sections = parseConfig(text);
+    debug.debug("Parsed sections:", sections);
 
-        // ключ = значение
-        if (line.includes("=") && currentSection) {
-            const [key, value] = line.split("=");
+    if (!schema) {
+        debug.info("No schema provided → returning all sections.");
+        return sections;
+    }
 
-            const keyParts = key.trim().split(".");
-            setNested(config[currentSection], keyParts, parseValue(value));
+    const result = {};
+    debug.trace("Applying schema:", schema);
+
+    for (const key of Object.keys(schema)) {
+        const def = schema[key];
+        debug.trace(`Processing schema key: "${key}"`, def);
+
+        if (def && typeof def === "object" && !Array.isArray(def)) {
+            debug.debug(`Schema key "${key}" treated as section`);
+
+            const sectionName = key;
+            const sectionData = sections[sectionName] || {};
+            result[sectionName] = result[sectionName] || {};
+
+            for (const subKey of Object.keys(def)) {
+                const subDef = def[subKey];
+                const raw = sectionData[subKey];
+
+                debug.trace(
+                    ` → Section "${sectionName}" key "${subKey}" raw:`,
+                    raw
+                );
+
+                if (raw === undefined) {
+                    debug.error(
+                        `Missing key '${subKey}' in section '${sectionName}'`
+                    );
+                    throw new Error(
+                        `Missing key '${subKey}' in section '${sectionName}'`
+                    );
+                } else {
+                    result[sectionName][subKey] = applyType(raw, subDef);
+                    debug.debug(
+                        ` ✓ Applied type to ${sectionName}.${subKey}:`,
+                        result[sectionName][subKey]
+                    );
+                }
+            }
+        } else {
+            debug.debug(`Schema key "${key}" treated as top-level find`);
+
+            const found = findKeyInSections(sections, key);
+            if (found) {
+                debug.trace(
+                    `Found top-level "${key}" in section "${found.section}"`
+                );
+                result[key] = applyType(found.value, def);
+                debug.debug(` ✓ Applied type to ${key}:`, result[key]);
+            } else {
+                debug.warn(`Key "${key}" not found in any section`);
+                result[key] = undefined;
+            }
         }
     }
 
-    return config;
+    debug.info("Final parsed config:", result);
+    return result;
 }
 
-export { parseConfig };
+export { parse };
